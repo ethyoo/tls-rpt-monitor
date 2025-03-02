@@ -5,9 +5,8 @@ import {reportIssue} from "./alerts.mjs";
 import {promisify} from 'node:util'
 import {unzip} from "node:zlib"
 import getRawBody from 'raw-body'
-import config from "./config.mjs"
 
-const {ignoredSenders} = config.config
+let config = {...process.env}
 
 const app = express()
 const port = process.env.port || 3000
@@ -54,9 +53,6 @@ app.post(['/v1/tls-rpt', '/v1/tlsrpt'], (req, res, next) => {
     "organization-name": orgName, "contact-info": contactInfo, "report-id": reportId,
     policies, "date-range": dateRange
   } = req.body
-
-  // TODO: Perform validation
-  if (ignoredSenders.includes(orgName.toLowerCase())) return;
 
   if (policies && Array.isArray(policies)) {
     for (const policy of policies) {

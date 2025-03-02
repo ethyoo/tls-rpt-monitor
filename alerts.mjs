@@ -7,24 +7,30 @@
  */
 import nodemailer from 'nodemailer'
 
-import config from "./config.mjs"
 import {readFile} from "node:fs/promises";
 import {dirname, join} from "path";
 import {fileURLToPath} from "url";
 
-const {smtp_host, smtp_username, smtp_password, recipients, from_address, emailCooldown} = config.config
+const {SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, SMTP_PORT, RECIPIENT, FROM_ADDRESS, EMAIL_COOLDOWN} = process.env
 
-const mailEnabled = smtp_host && smtp_username
+const mailEnabled = SMTP_HOST && SMTP_USERNAME
+
+/* Based on SMTP2GO's port numbers: https://www.smtp2go.com/setup/ */
+const implicitTLS = ["465", "8465", "443"]
+
+let useImplicit = implicitTLS.includes(SMTP_PORT)
 
 let transport;
 if (mailEnabled) {
   transport = nodemailer.createTransport({
-    host: smtp_host,
-    port: 587,
-    secure: false, // upgrade later with STARTTLS
+    logger: true,
+    debug: false,
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: useImplicit,
     auth: {
-      user: smtp_username,
-      pass: smtp_password,
+      user: SMTP_USERNAME,
+      pass: SMTP_PASSWORD,
     },
   });
 }
@@ -48,17 +54,16 @@ async function fillTemplate(values) {
   return newString;
 }
 
-
 export async function reportIssue(fullReport, {orgName, reportId, contactInfo, domain}, {
   startTime,
   endTime
 }, {successCount, failCount}, failures) {
   // Rate limit just to stop spam
-  if (Date.now() - lastEmailSentAt < (emailCooldown * 1000)) return console.log("Not sending email: Ratelimit.")
+  if (Date.now() - lastEmailSentAt < (EMAIL_COOLDOWN * 1000)) return console.log("Not sending email: Rate limited.")
 
   if (!mailEnabled) throw new Error("Can't send error - mail is not enabled.")
 
-  const toEmails = recipients[domain] || recipients["otherwise"] || false
+  const toEmails = RECIPIENT || false
   if (!toEmails) return console.log(`No recipients for domain ${domain}`)
 
   let failureReports = []
@@ -115,7 +120,7 @@ export async function reportIssue(fullReport, {orgName, reportId, contactInfo, d
 
 
   const info = await transport.sendMail({
-    from: from_address,
+    from: FROM_ADDRESS,
     to: Array.isArray(toEmails) ? toEmails.join(",").slice(0, -1) : toEmails,
     subject: `TLS report from ${orgName} has failure for ${domain}`,
     text: fullHtmlEmail.replace(/<head>[\s\S]*<\/head>/, "").replace(/<[^>]*>/g, ""),
